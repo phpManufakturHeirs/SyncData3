@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>SyncData 2</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="robots" content="noindex,nofollow" />
+    <link rel="shortcut icon" type="image/x-icon" href="{{ syncdata_url }}/favicon.ico" />
+    <link rel="stylesheet" href="{{ syncdata_url }}/css/skin.css" type="text/css" media="all" />
+    <script src="{{ syncdata_url }}/js/jquery.min.js" type="text/javascript"></script>
+    <script type="text/javascript">
+    //<![CDATA[
+        var sessid   = "{{ sessid }}";
+        var jobid    = "{{ jobid }}";
+        var url      = "{{ syncdata_url }}";
+        var interval = {{ interval }};           // time between polls
+        var maxwait  = {{ maxwait }};          // max time to wait
+        var wait_err = "{{ maxwait_error }}";
+
+    //]]>
+    </script>
+    <script src="{{ syncdata_url }}/js/autosync.js" type="text/javascript"></script>
+  </head>
+  <body>
+    <div id="container">
+      <div id="syncdata">
+        SyncData {{ version }} - AutoSync (JobID: {{ jobid }})
+      </div>
+      <div id="system">
+        <div class="memory"><span class="label">Memory peak usage:</span> {{ memory.peak }} MB (Limit: {{ memory.limit }})</div>
+        <div class="time"><span class="label">Execution time:</span> {{ time.total }} seconds (max: {{ time.max }})</div>
+        <div class="route"><span class="label">Executed route:</span> {{ route }}</div>
+        <div><span class="label">Max. wait time:</span> {{ maxwait }} ms</div>
+      </div>
+      <div id="wait">
+          {{ content }}
+      </div>
+      <div id="content">
+        
+      </div>
+      <div id="progress"></div>
+      <div id="error" class="error"></div>
+      <div id="footer">
+        <p>[ <a href="https://github.com/phpManufakturHeirs/SyncData2/wiki" target="_blank">Wiki</a> ] [ <a href="http://phpmanufaktur.info" target="_blank">Support</a> ]</p>
+        <p>&copy 2011, 2013 by <a href="http://phpmanufaktur.info" target="_blank">phpManufaktur</a>, SyncData is released under <a href="http://opensource.org/licenses/MIT" target="_blank">MIT license</a>.</p>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{#
+  ConfirmationLog
+
+  @author Team phpManufaktur <team@phpmanufaktur.de>
+  @link https://kit2.phpmanufaktur.de
+  @copyright 2013 Ralf Hertsch <ralf.hertsch@phpmanufaktur.de>
+  @license MIT License (MIT) http://www.opensource.org/licenses/MIT
+
+  /css/syncdata.backend.css for this template will be loaded by the CMS!
+#}
+{% spaceless %}
+  <div id="confirmation_container">
+    <ul id="toolbar">
+      {% for item in toolbar %}
+        <li{% if item.active %} class="active"{% endif %}><a href="{{ item.link }}" title="{{ item.hint|trans }}">{{ item.text|trans }}</a></li>
+      {% endfor %}
+    </ul>
+    <div id="confirmation_content">
+      {% block content %}
+      {% endblock content %}
+    </div>
+  </div>  
+{% endspaceless %}

@@ -1,0 +1,9 @@
+<?php
+    //long_process.php
+    for($i=1;$i<=30;$i++){
+        session_start();
+        $_SESSION["progress"]=$i;
+        session_write_close();
+        sleep(1);
+    }
+?>

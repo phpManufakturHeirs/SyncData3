@@ -73,22 +73,32 @@ class SynchronizeClient
             return '- invalid request -';
         }
 
+        ob_end_clean();
+        header("Connection: close");
+        ignore_user_abort(true); // just to be safe
+        ob_start();
+        header('Content-type: application/json');
+        echo json_encode(array('success'=>true));
+        $size = ob_get_length();
+        header("Content-Length: $size");
+        ob_end_flush(); // Strange behaviour, will not work
+        flush();        // Unless both are called !
+
         if(!defined('SYNCDATA_JOBID'))
             define('SYNCDATA_JOBID', $_GET['jobid']);
 
         if(!session_id()) session_start();
 
-        $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"] = 0;
-        $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]    = 0;
-        $_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"] = array();
+        $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"]   = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]      = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"] = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]   = array();
 
         // ----- Step 1: Check connection --------------------------------------
         if(!$this->checkSource()) // check connection
         {
-            $this->logProgress(array(
-                'message' => self::$error_msg,
-                'success' => false
-            ));
+            $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"] = 1;
+            $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]    = 1;
             exit();
         } else {
             $this->logProgress(array(
@@ -104,7 +114,20 @@ class SynchronizeClient
             $this->app['monolog']->addInfo('>>> sendConfirmations: '.$result);
             $this->logProgress(array(
                 'message' => $result,
+                'success' => true,
             ));
+            // get a list of available files
+            $files = $this->listFiles('data/confirmation','confirmation_');
+            if(isset($files) && count($files))   // if there are any files...
+            {
+                $this->app['monolog']->addInfo(
+                    sprintf('>>> sendConfirmations: %d files found',count($files))
+                );
+                $this->logProgress(array(
+                    'message' => '%d confirmation logs found',
+                    'param'   => count($files),
+                ));
+            }
         } else {
             $this->app['monolog']->addInfo('>>> sendConfirmations: disabled');
             $this->logProgress(array(
@@ -120,6 +143,27 @@ class SynchronizeClient
             $this->logProgress(array(
                 'message' => $result,
             ));
+            // get a list of available files
+            $files = $this->listFiles('outbox');
+            if(isset($files) && count($files))   // if there are any files...
+            {
+                $this->app['monolog']->addInfo(
+                    sprintf('>>> sendOutbox: %d files found',count($files))
+                );
+                $this->logProgress(array(
+                    'message' => '%d files in the outbox',
+                    'param'   => count($files),
+                ));
+                foreach(array_values($files) as $file) {
+                    $path = $this->app['utils']->sanitizePath(sprintf('%s/%s/%s', SYNCDATA_PATH, 'outbox', $file));
+                    $this->pushFile($path);
+                }
+            } else {
+                $this->logProgress(array(
+                    'message' => 'There are no files to be uploaded',
+                    'success' => true
+                ));
+            }
         } else {
             $this->app['monolog']->addInfo('>>>        sendOutbox: disabled');
             $this->logProgress(array(
@@ -237,11 +281,11 @@ class SynchronizeClient
                             if($class=='error')
                             {
                                 $is_error = true;
-                                $err_count++;
+                                $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]++;
                             }
                             if($class=='message')
                             {
-                                $message = $element->textContent;
+                                $message = ( $is_error ? 'ERROR ' : '' ) . $element->textContent;
                                 $this->logProgress(array(
                                     'message' => $message,
                                     'success' => ( $is_error ? false : true )
@@ -249,21 +293,17 @@ class SynchronizeClient
                             }
                         }
                     }
-/*
-<div id="content">
-        <div class="error"><h1>Oooops ...</h1><div class="message">
-*/
                     $file_count++;
                 }
                 $this->logProgress(array(
                     'message' => 'import done (%d files)',
                     'param'   => $file_count
                 ));
-                if($err_count)
+                if($_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"])
                 {
                     $this->logProgress(array(
-                        'message' => '<span class="error">PLEASE NOTE: There were %d import errors!</span>',
-                        'param'   => $err_count,
+                        'message' => '<br /><br />PLEASE NOTE: There were %d import errors!',
+                        'param'   => $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"],
                         'success' => false,
                     ));
                 }
@@ -272,8 +312,8 @@ class SynchronizeClient
 
         // ----- Step 6: Finished ------------------------------------------------
         $this->logProgress(array(
-            'message'  => '----- '.$this->app['translator']->trans('Job finished').' -----',
-            'success'  => false,
+            'message'  => '<span class="ready">----- '.$this->app['translator']->trans('Job finished').' -----</span>',
+            'success'  => true,
             'finished' => true,
         ));
     }
@@ -285,46 +325,57 @@ class SynchronizeClient
      **/
     public function autosync_poll()
     {
-        $this->app['monolog']->addInfo(
-            '----- AUTOSYNC POLL -----', array('method' => __METHOD__, 'line' => __LINE__)
-        );
-
-session_start();
-
-        header('Content-Type: application/json');
-
         if(
-            ( !isset($_GET['jobid'])  || !$this->checkJob($_GET['jobid']) )
+            (
+                   !isset($_GET['jobid'])
+                || !$this->checkJob($_GET['jobid'])
+            )
         ) {
             $this->app['monolog']->addError(sprintf(
                 'no such job: [%s]', $_GET['jobid']
             ));
             echo json_encode(array(
-                'success' => false,
-                'message' => '- invalid request -'
+                'success'  => false,
+                'message'  => '- invalid request -',
+                'finished' => true,
             ),1);
             exit();
         }
 
-        $success = (
-            (
-                   isset($_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"])
-                &&       $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]
-            )
-            ? false : true
+        $errmsg = null;
+        $finished = false;
+        $success = true;
+
+        // read job file
+        $file = $this->app['utils']->sanitizePath(
+            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, $_GET['jobid'])
         );
-        $finished = (
-            (
-                   isset($_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"])
-                &&       $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"]
-            )
-            ? true : false
+        $progress = str_replace("\n","<br />\n",file($file));
+        if(substr_count(implode('',$progress),'Job finished')) {
+            $finished = true;
+        }
+
+        // check if there's an error file
+        $errfile = $this->app['utils']->sanitizePath(
+            sprintf('%s/temp/autosync_job_%s.error', SYNCDATA_PATH, $_GET['jobid'])
         );
-        echo json_encode(array(
+        if(file_exists($errfile)) {
+            $errmsg = str_replace("\n","<br />\n",file($errfile));
+            $success = false;
+        }
+
+        $result = array(
             'success'  => $success,
-            'message'  => implode("<br />",$_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]),
-            'finished' => $finished
-        ),1);
+            'message'  => $progress,
+            'finished' => $finished,
+            'errors'   => $errmsg,
+        );
+
+        $result = json_encode($result,1);
+
+        header('Content-type: application/json');
+        echo json_encode($result);
+
         exit();
     }
 
@@ -372,7 +423,7 @@ session_start();
                 $this->app['monolog']->addError(
                     self::$error_msg, array('method' => __METHOD__, 'line' => __LINE__)
                 );
-                $this->logProgress(self::$error_msg);
+                $this->logProgress(array('message'=>self::$error_msg,'success'=>false));
                 return false;
             }
         } catch (\Exception $e) {
@@ -401,7 +452,6 @@ session_start();
                     unlink($f);
     }   // end function cleanupJobs()
     
-
     /**
      *
      * @access protected
@@ -495,11 +545,11 @@ session_start();
      * @access protected
      * @return
      **/
-    protected function listInbox()
+    protected function listFiles($folder='inbox',$prefix='')
     {
-        $inbox_path = $this->app['utils']->sanitizePath(sprintf('%s/inbox/', SYNCDATA_PATH));
-        return $this->app['utils']->getFiles($inbox_path,'inbox');
-    }   // end function listInbox()
+        $path = $this->app['utils']->sanitizePath(sprintf('%s/%s/', SYNCDATA_PATH, $folder));
+        return $this->app['utils']->getFiles($path,$prefix);
+    }   // end function listFiles()
     
     /**
      * Process the tables for the synchronization
@@ -674,6 +724,44 @@ session_start();
     }
 
     /**
+     *
+     * @access protected
+     * @return
+     **/
+    protected function pushFile($file)
+    {
+        $this->app['monolog']->addInfo(sprintf(
+            'pushing file [%s]', $file
+        ));
+        $ch = $this->init_client(true);
+        curl_setopt($ch, CURLOPT_URL, sprintf(
+            '%s/syncdata/upload_confirmations?key=%s',
+            $this->app['config']['sync']['server']['url'],
+            $this->app['config']['sync']['server']['key']
+        ));
+        $postData = array(
+            'file' => '@'.realpath($file),
+        );
+	    curl_setopt($ch, CURLOPT_POST,1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+        $response = curl_exec($ch);
+        $this->app['monolog']->addInfo(print_r($response,1));
+    }   // end function pushFile()
+
+    protected function finishJob()
+    {
+        // remove job file
+        $file = $this->app['utils']->sanitizePath(
+            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, SYNCDATA_JOBID)
+        );
+        unlink($file);
+        unset($_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]);
+        unset($_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]);
+        unset($_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"]);
+        unset($_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]);
+    }
+
+    /**
      * start a new job
      *
      * @access protected
@@ -690,24 +778,13 @@ session_start();
 
         if($this->logProgress(
             array(
-                'message' => '----- '.$this->app['translator']->trans('Job started').' ('.date('c').') -----',
+                'message' => '----- '.$this->app['translator']->trans('Job started').' -----',
             )
         )) {
             return true;
         } else {
             return false;
         }
-
-        ob_end_clean();
-        header("Connection: close");
-        ignore_user_abort(true); // just to be safe
-        ob_start();
-        header('Content-type: application/json');
-        echo json_encode(array('jobid'=>$jobid));
-        $size = ob_get_length();
-        header("Content-Length: $size");
-        ob_end_flush(); // Strange behaviour, will not work
-        flush();        // Unless both are called !
     }   // end function startJob()
 
     /**
@@ -723,37 +800,50 @@ session_start();
             sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, SYNCDATA_JOBID)
         );
 
+        // obfuscate paths
+        $data['message'] = str_ireplace(
+            array(
+                SYNCDATA_PATH,
+                str_replace('/','\\',SYNCDATA_PATH),
+            ),
+            array(
+                '/abs/path/to',
+                '/abs/path/to',
+            ),
+            $data['message']
+        );
+
         // translate and replace params (if any)
         $data['message'] = $this->app['translator']->trans($data['message']);
         if(isset($data['param'])) $data['message'] = sprintf($data['message'],$data['param']);
 
-        // add date to message
-        $data['message'] = sprintf('[%10s] %s', date('c'), $data['message']);
-        $_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"][] = $data['message'];
-
-        if(isset($data['finished']))
+        // mark errors
+        if(substr_count($data['message'],'ERROR ') || ( isset($data['success']) && !$data['success']))
         {
-            $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"] = true;
+            $data['message'] = '<span class="errline">'.$data['message'].'</span>';
+        } else {
+            // add date to message
+            $data['message'] = sprintf('[%10s] %s', date('c'), $data['message']);
         }
 
         $mode = 'a';
         if(!file_exists($file)) $mode = 'w';
 
-        $fh = fopen($file,$mode); // create new / overwrite
+        // error
+        if(isset($data['success']) && $data['success'] === false)
+        {
+            $fh = fopen($file.'.error',$mode);
+        } else {
+            $fh = fopen($file,$mode); // create new / overwrite
+        }
+
         if(!$fh || !is_resource($fh))
         {
-            $this->app['monolog']->addInfo('Schreiben in Jobdatei fehlgeschlagen!');
+            $this->app['monolog']->addError('Schreiben in Jobdatei fehlgeschlagen!');
             return false;
         }
         fwrite($fh,$data['message']."\n");
         fclose($fh);
-
-        if(isset($data['success']) && $data['success'] === false)
-        {
-            $fh = fopen($file.'.error','w');
-            fwrite($fh,$data['message']);
-            fclose($fh);
-        }
 
         return true;
     }

@@ -104,6 +104,24 @@ class SynchronizeServer
 
     /**
      *
+     * @access public
+     * @return
+     **/
+    public function receive()
+    {
+        try {
+            $this->app['monolog']->addInfo(
+                'Start SynchronizeServer RECEIVE', array('method' => __METHOD__, 'line' => __LINE__)
+            );
+            $this->app['monolog']->addInfo(print_r($_FILES,1));
+        } catch (\Exception $e) {
+            throw new \Exception($e);
+        }
+    }   // end function receive()
+    
+
+    /**
+     *
      * @access protected
      * @return
      **/

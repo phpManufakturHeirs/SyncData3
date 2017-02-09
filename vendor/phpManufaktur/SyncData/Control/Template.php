@@ -16,37 +16,58 @@ class Template
     public function parse(Application $app, $result, $tpl='body')
     {
         $html = file_get_contents(SYNCDATA_PATH.'/vendor/phpManufaktur/SyncData/Template/default/'.$tpl.'.html');
+        $find = array(
+            '{{ content }}',
+            '{{ version }}',
+            '{{ memory.peak }}',
+            '{{ memory.limit }}',
+            '{{ time.total }}',
+            '{{ time.max }}',
+            '{{ route }}',
+            '{{ syncdata_url }}',
+            '{{ skin }}',
+        );
+        $replace = array(
+            $result,
+            SYNCDATA_VERSION,
+            memory_get_peak_usage(true)/(1024*1024),
+            $app['config']['general']['memory_limit'],
+            number_format(microtime(true) - SYNCDATA_SCRIPT_START, 2),
+            $app['config']['general']['max_execution_time'],
+            SYNCDATA_ROUTE,
+            SYNCDATA_URL,
+            $app['config']['general']['skin'],
+        );
 
-        $html = str_ireplace(
-            array(
-                '{{ content }}',
-                '{{ version }}',
-                '{{ memory.peak }}',
-                '{{ memory.limit }}',
-                '{{ time.total }}',
-                '{{ time.max }}',
-                '{{ route }}',
-                '{{ syncdata_url }}',
+        if($tpl=='autosync') {
+            $find = array_merge($find,array(
                 '{{ jobid }}',
                 '{{ sessid }}',
                 '{{ interval }}',
                 '{{ maxwait }}',
+                '{{ maxwait_secs }}',
                 '{{ maxwait_error }}',
-            ), array(
-                $result,
-                SYNCDATA_VERSION,
-                memory_get_peak_usage(true)/(1024*1024),
-                $app['config']['general']['memory_limit'],
-                number_format(microtime(true) - SYNCDATA_SCRIPT_START, 2),
-                $app['config']['general']['max_execution_time'],
-                SYNCDATA_ROUTE,
-                SYNCDATA_URL,
-                ( $tpl == 'autosync' ? ( defined('SYNCDATA_JOBID') ? SYNCDATA_JOBID : 'unknown' ) : '' ),
-                ( $tpl == 'autosync' ? session_id()                                               : '' ),
-                ( $tpl == 'autosync' ? $app['config']['sync']['client']['interval']               : '' ),
-                ( $tpl == 'autosync' ? $app['config']['sync']['client']['maxexecutiontime']       : '' ),
-                ( $tpl == 'autosync' ? $app['translator']->trans('Aktualisierung fehlgeschlagen. Die maximale Wartezeit wurde überschritten.') : '' ),
-            ), $html);
+                '{{ err_text }}',
+            ));
+            $replace = array_merge($replace,array(
+                ( defined('SYNCDATA_JOBID') ? SYNCDATA_JOBID : 'unknown' ),
+                session_id(),
+                $app['config']['sync']['client']['interval'],
+                $app['config']['sync']['client']['maxexecutiontime'],
+                ( $app['config']['sync']['client']['maxexecutiontime'] / 1000 ),
+                $app['translator']->trans('Aktualisierung fehlgeschlagen. Die maximale Wartezeit wurde überschritten.'),
+                '<i class="icono-exclamation"></i> '.$app['translator']->trans('Please note: There were <span id="errcnt"></span> Errors. Please check the log for details.')
+            ));
+        }
+
+        $html = str_ireplace(
+            $find,
+            $replace,
+            $html
+        );
+
+        // remove missing
+        $html = preg_replace( '~{{ .* }}~','',$html);
 
         return $html;
     }

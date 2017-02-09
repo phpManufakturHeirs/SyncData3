@@ -70,6 +70,7 @@ try {
     define('SYNCDATA_ROUTE', $route);
     define('SYNCDATA_URL', substr($app['config']['CMS']['CMS_URL'].substr(SYNCDATA_PATH, strlen($app['config']['CMS']['CMS_PATH'])), 0));
 
+    // $initConfig is defined in bootstrap.inc
     if ($initConfig->executedSetup() && $app['config']['security']['active']) {
         // if SyncData was initialized prompt a message!
         $initConfirmation = new confirmationSetup();
@@ -220,7 +221,6 @@ try {
                 $app_result = '- invalid request -';
                 break;
             }
-/*
             // request AJAX call
             if(
                    !isset($_SERVER['HTTP_X_REQUESTED_WITH'])
@@ -229,7 +229,6 @@ try {
                 $app_result = '- invalid request -';
                 break;
             }
-*/
             $synchronizeClient = new SynchronizeClient($app);
             $synchronizeClient->autosync_poll();
             break;
@@ -293,6 +292,14 @@ try {
             $Confirmations = new Confirmations($app);
             $app_result = $Confirmations->getConfirmations();
             break;
+        case '/upload_confirmations':
+             if (!$CheckKey->check()) {
+                $app_result = $CheckKey->getKeyHint();
+                break;
+            }
+            $synchronizeServer = new SynchronizeServer($app);
+            $app_result = $synchronizeServer->receive();
+            break;
         case '#init_syncdata':
             // initialized SyncData2
             $app_result = 'SyncData has successfull initialized and also created a security key: <span class="security_key">'.
@@ -341,9 +348,9 @@ try {
     $Template = new Template();
     $error = sprintf(
         '<div class="error"><h1>%s</h1><div class="message">%s</div><div class="logfile">%s</div></div>',
-        $app['translator']->trans('Oooops ...'),
+        ( ($app->offsetExists('translator') && $app->offsetExists('config')) ? $app['translator']->trans('Oooops ...') : 'Oooops ...' ),
         parseException($app,$e),
-        $app['translator']->trans('Please check the logfile for further information!')
+        ( $app->offsetExists('translator') ? $app['translator']->trans('Please check the logfile for further information!') : 'Please check the logfile for further information!' )
     );
     echo $Template->parse($app, $error);
 }

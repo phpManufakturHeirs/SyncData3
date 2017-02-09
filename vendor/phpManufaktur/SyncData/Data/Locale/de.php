@@ -49,4 +49,8 @@ return array(
         => 'Syncdata Server wurde erfolgreich kontaktiert',
     'Synchronization in progress, please wait...'
         => 'Aktualisierung läuft, bitte warten...',
+    'There are no confirmation logs to be uploaded'
+        => 'Keine Confirmation Logs zum Upload vorhanden',
+    'Unable to connect to server! (Code: %s)'
+        => 'Verbindung zum Server fehlgeschlagen! (Code: %s)',
 );

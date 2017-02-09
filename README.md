@@ -1,6 +1,6 @@
-![SyncData2](https://github.com/phpManufaktur/SyncData2/wiki/image/SyncData2-200x200.png)
+![SyncData3](https://github.com/phpManufaktur/SyncData2/wiki/image/SyncData2-200x200.png)
 
-SyncData2 enable the backup, restore and synchronizing from all data of a webspace.
+SyncData3 enable the backup, restore and synchronizing from all data of a webspace.
 
 ### Requirements
 
@@ -10,8 +10,7 @@ SyncData2 enable the backup, restore and synchronizing from all data of a webspa
 * PHP 5.3.3 at minimum
 * [cURL extension](http://php.net/manual/en/book.curl.php) installed
 
-SyncData2 is developed for WebsiteBaker, LEPTON CMS and BlackCat CMS but is not a Add-on for these Content Management Systems and will be installed and executed as standalone extension parallel to the CMS.
+SyncData3 is developed for WebsiteBaker, LEPTON CMS and BlackCat CMS but is not a Add-on for these Content Management Systems and will be installed and executed as standalone extension parallel to the CMS.
 
-Please consult the [SyncData 2.x Wiki](https://github.com/phpManufaktur/SyncData2/wiki) to get further information.
+Please consult the [SyncData 3.x Wiki](https://github.com/phpManufakturHeirs/SyncData3/wiki) to get further information.
 
-[![githalytics.com alpha](https://cruel-carlota.pagodabox.com/91a1209b91eef34d44ac34072dc4dff3 "githalytics.com")](http://githalytics.com/phpManufaktur/SyncData2)

@@ -183,13 +183,21 @@ class Utils
      * @access public
      * @return
      **/
-    public function getFiles($basedir,$what,$with_md5=false)
+    public function getFiles($basedir,$prefix='',$with_md5=false)
     {
         $zip_files   = array();
 
         $this->app['monolog']->addInfo(sprintf(
-            'checking %s [%s]', $what, $basedir
+            'getFiles from basedir %s [prefix: %s]', $basedir, $prefix
         ), array('method' => __METHOD__, 'line' => __LINE__));
+
+        if(!is_dir($basedir)) {
+            $this->app['monolog']->addError(
+                'no such directory!',
+                array('method' => __METHOD__, 'line' => __LINE__)
+            );
+            return array();
+        }
 
         $directory_handle = dir($basedir);
         while (false !== ($file = $directory_handle->read())) {
@@ -199,12 +207,30 @@ class Utils
             $this->app['monolog']->addInfo(sprintf(
                 'checking file [%s]', $path
             ), array('method' => __METHOD__, 'line' => __LINE__));
-            if(is_dir($path)) continue;
+            if(is_dir($path)) {
+                $this->app['monolog']->addInfo('>>> it\'s a directory');
+                continue;
+            }
+            if(!file_exists($path)) {
+                $this->app['monolog']->addInfo('>>> does not exist (???)');
+                continue;
+            }
+            if(substr_compare(pathinfo($path,PATHINFO_FILENAME), $prefix, 0, strlen($prefix))) {
+                $this->app['monolog']->addInfo(sprintf(
+                    '>>> [%s] does not match prefix [%s] (compare result: %s)',
+                    pathinfo($path,PATHINFO_FILENAME),
+                    $prefix,
+                    substr_compare(pathinfo($path,PATHINFO_FILENAME), $prefix, 0, strlen($prefix))
+                ));
+                continue;
+            }
             if(pathinfo($path,PATHINFO_EXTENSION) == 'zip') {
                 // find md5 file
                 $md5_path = $this->app['utils']->sanitizePath("$basedir/".pathinfo($path,PATHINFO_FILENAME).'.md5');
                 if(!file_exists($md5_path)) {
-                    $this->app['monolog']->addInfo('no checksum found', array('method' => __METHOD__, 'line' => __LINE__));
+                    $this->app['monolog']->addInfo(sprintf(
+                        'no checksum found (%s)',$md5_path
+                    ), array('method' => __METHOD__, 'line' => __LINE__));
                     continue; // invalid zip file
                 }
                 // check file checksum

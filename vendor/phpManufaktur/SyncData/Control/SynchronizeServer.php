@@ -31,10 +31,130 @@ class SynchronizeServer
         $this->app = $app;
     }
 
+    /**
+     * autosync handler; prints progress to job file
+     *
+     * @access public
+     * @return void
+     **/
+    public function autosync()
+    {
+        $this->app['monolog']->addInfo(
+            '----- SynchronizeServer AUTOSYNC -----', array('method' => __METHOD__, 'line' => __LINE__)
+        );
+
+        if(!isset($_GET['jobid']) || !$this->app['autosync']->checkJob($_GET['jobid']))
+        {
+            $this->app['monolog']->addError(sprintf(
+                'no such job: [%s]', $_GET['jobid']
+            ));
+            return '- invalid request -';
+        }
+
+        ob_end_clean();
+        header("Connection: close");
+        ignore_user_abort(true); // just to be safe
+        ob_start();
+        header('Content-type: application/json');
+        echo json_encode(array('success'=>true));
+        $size = ob_get_length();
+        header("Content-Length: $size");
+        ob_end_flush(); // Strange behaviour, will not work
+        flush();        // Unless both are called !
+
+        if(!defined('SYNCDATA_JOBID'))
+            define('SYNCDATA_JOBID', $_GET['jobid']);
+
+        if(!session_id()) session_start();
+
+        $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"]   = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]      = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"] = 0;
+        $_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]   = array();
+
+        // ----- Step 1: Check connection --------------------------------------
+        if(!$this->app['autosync']->checkConnection('client')) // check connection
+        {
+            $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"] = 1;
+            $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]    = 1;
+            exit();
+        } else {
+            $this->app['autosync']->logProgress(array(
+                'message' => 'Syncdata server successfully contacted',
+            ));
+        }
+
+        // ----- Step 2: Upload local outbox -----------------------------------
+        if($this->app['config']['sync']['server']['steps']['upload'])
+        {
+            $this->app['autosync']->logProgress(array(
+                'message' => 'uploading outbox',
+            ));
+            $this->app['autosync']->pushOutbox('client');
+        } else {
+            $this->app['monolog']->addInfo('>>>        sendOutbox: disabled');
+            $this->app['autosync']->logProgress(array(
+                'message' => 'skipped step 2 (sendOutbox) because it is disabled',
+            ));
+        }
+
+        // ----- Step 3: Import ------------------------------------------------
+        if($this->app['config']['sync']['server']['steps']['import'])
+        {
+            $this->app['autosync']->logProgress(array(
+                'message' => 'triggering import',
+            ));
+            $remote_ch = $this->app['utils']->init_client(true); // maybe with proxy
+            curl_setopt($remote_ch, CURLOPT_URL, sprintf(
+                '%s/syncdata/sync?key=%s',
+                $this->app['config']['sync']['client']['url'],
+                $this->app['config']['sync']['client']['key']
+            ));
+            $response = curl_exec($remote_ch);
+            if( curl_getinfo($remote_ch,CURLINFO_HTTP_CODE) != 200 )
+            {
+                $message = sprintf(
+                    $this->app['translator']->trans(
+                        'Unable to connect to server! (Code: %s)'
+                    ), curl_getinfo($remote_ch,CURLINFO_HTTP_CODE)
+                );
+                $this->app['monolog']->addError($message, array('method' => __METHOD__, 'line' => __LINE__));
+                $this->app['autosync']->logProgress(array(
+                    'message' => $message,
+                    'success' => false
+                ));
+            } else {
+                $this->app['monolog']->addInfo('----- IMPORT CURL RESPONSE ----- '.print_r($response,1));
+
+                list($is_error,$message) = $this->app['utils']->parseResponse($response);
+                if($is_error) $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]++;
+                $this->app['autosync']->logProgress(array(
+                    'message' => $message,
+                    'success' => ( $is_error ? false : true )
+                ));
+            }
+        } else {
+            $this->app['monolog']->addInfo('>>>        import: disabled');
+            $this->app['autosync']->logProgress(array(
+                'message' => 'skipped step 3 (import) because it is disabled',
+            ));
+        }
+
+        // ----- Step 4: Finished ------------------------------------------------
+        $this->app['autosync']->logProgress(array(
+            'message'  => '<span class="ready">----- '.$this->app['translator']->trans('Job finished').' -----</span>',
+            'success'  => true,
+            'finished' => true,
+        ));
+    }   // end function autosync()
+
     public function exec()
     {
         try {
-            $this->app['monolog']->addInfo('Start SynchronizeServer EXEC', array('method' => __METHOD__, 'line' => __LINE__));
+            $this->app['monolog']->addInfo(
+                'Start SynchronizeServer EXEC',
+                array('method' => __METHOD__, 'line' => __LINE__)
+            );
             $zip_files = $this->listOutbox();
             echo json_encode($zip_files,true);
             exit;
@@ -43,7 +163,10 @@ class SynchronizeServer
         }
     }
 
-    public function push()
+    /**
+     * push a file from the outbox to the client
+     **/
+    public function pushfile()
     {
         try {
             $this->app['monolog']->addInfo(
@@ -109,16 +232,8 @@ class SynchronizeServer
      **/
     public function receive()
     {
-        try {
-            $this->app['monolog']->addInfo(
-                'Start SynchronizeServer RECEIVE', array('method' => __METHOD__, 'line' => __LINE__)
-            );
-            $this->app['monolog']->addInfo(print_r($_FILES,1));
-        } catch (\Exception $e) {
-            throw new \Exception($e);
-        }
+        $this->app['autosync']->receiveFile();
     }   // end function receive()
-    
 
     /**
      *

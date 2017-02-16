@@ -180,6 +180,18 @@ class Utils
 
     /**
      *
+     * @access protected
+     * @return
+     **/
+    public function listFiles($folder='inbox',$prefix='')
+    {
+        $path = $this->sanitizePath(sprintf('%s/%s/', SYNCDATA_PATH, $folder));
+        $this->app['monolog']->addDebug('listFiles ['.$path.']');
+        return $this->getFiles($path,$prefix);
+    }   // end function listFiles()
+
+    /**
+     *
      * @access public
      * @return
      **/
@@ -264,7 +276,80 @@ class Utils
         sort($zip_files);
         return $zip_files;
     }   // end function getFiles()
+
+    /**
+     * Initialisierung curl
+     **/
+    public function init_client($is_remote=false, $add_headers=null)
+    {
+        $headers = array(
+            'User-Agent: php-curl',
+        );
+
+        if(is_array($add_headers) && count($add_headers))
+            $headers = array_merge($headers,$add_headers);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+// NUR ZUM TESTEN
+        if($is_remote)
+        {
+#            curl_setopt($ch, CURLOPT_PROXY, 'proxy.materna.de');
+#            curl_setopt($ch, CURLOPT_PROXYPORT, '8080');
+        }
+// NUR ZUM TESTEN
+        return $ch;
+    }
     
+    /**
+     *
+     * @access protected
+     * @return
+     **/
+    public function pushFile($file,$destination)
+    {
+        // check the file path
+        if($this->checkPath($file))
+        {
+            $this->app['monolog']->addInfo(sprintf(
+                'pushing file [%s]', $file
+            ), array('method' => __METHOD__, 'line' => __LINE__));
+            try {
+                $cfile = new \CURLFile($file);
+                $url   = sprintf(
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    '%s/syncdata/upload_confirmations?key=%s',
+// !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    $this->app['config']['sync'][$destination]['url'],
+                    $this->app['config']['sync'][$destination]['key']
+                );
+                $ch = $this->init_client(true);
+                curl_setopt($ch, CURLOPT_URL, $url);
+                $postData = array('file' => $cfile, 'checksum' => md5_file($file));
+        	    curl_setopt($ch, CURLOPT_POST,1);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+                $response = curl_exec($ch);
+                $this->app['monolog']->addInfo('----- PUSHFILE CURL RESPONSE ----- '.print_r($response,1));
+                $result = json_decode($response,true);
+                return $result;
+            } catch( \Exception $e ) {
+                $this->app['monolog']->addError(
+                    'pushFile Exception: '.$e->getMessage,
+                    array('method' => __METHOD__, 'line' => __LINE__)
+                );
+                throw new \Exception();
+            }
+        } else {
+            $this->app['monolog']->addError(sprintf(
+                'Unable to push file [%s]: Invalid path!',
+                $file
+            ));
+            return false;
+        }
+    }   // end function pushFile()
 
     /**
      * Remove a directory recursivly
@@ -733,6 +818,63 @@ class Utils
         else
             return false;
     }   // end function checkJSON()
+
+    /**
+     * validate path against ['config']['security']['push_paths']
+     *
+     * @access public
+     * @param  string  $path
+     * @return boolean
+     **/
+    public function checkPath($path)
+    {
+        $paths = $this->app['config']['security']['push_paths'];
+        foreach(array_values($paths) as $subdir)
+        {
+            $fullpath = $this->sanitizePath(
+                sprintf('%s/%s', SYNCDATA_PATH, $subdir)
+            );
+            if(!substr_compare($path,$fullpath,0,strlen($fullpath),false)) {
+                return true;
+            }
+        }
+        return false;
+    }   // end function checkPath()
+
+    /**
+     *
+     * @access public
+     * @return
+     **/
+    public function parseResponse($result)
+    {
+        $is_error = false;
+        $message  = NULL;
+        $dom      = new \DOMDocument('1.0', 'UTF-8');
+        libxml_use_internal_errors(true);
+
+        $dom->loadHTML($result);
+
+        if($dom->getElementById('content')->hasChildNodes())
+        {
+            $nodes    = $dom->getElementsByTagName("div");
+            foreach ($nodes as $element)
+            {
+                $class = $element->getAttribute("class");
+                if($class=='error')
+                {
+                    $is_error = true;
+                }
+                if($class=='message')
+                {
+                    $message = ( $is_error ? '[ERROR] ' : '' ) . $element->textContent;
+                }
+            }
+        }
+
+        return array($is_error,$message);
+    }   // end function parseResponse()
+    
 
     /**
      *

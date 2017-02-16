@@ -15,7 +15,7 @@ if ('á' != "\xc3\xa1") {
 }
 
 return array(
-    '%d files found in outbox'
+    '%d files in the outbox'
         => '%d Dateien in der Outbox',
     '- invalid request -'
         => '- ungültige Anfrage -',
@@ -41,16 +41,16 @@ return array(
         => '<span class="error">BITTE BEACHTEN: Es wurden %d Importfehler registriert!</span>',
     'Result'
         => 'Ergebnis',
-    'skipped step 2 (sendConfirmations) because it is disabled'
-        => 'Schritt 2 (sendConfirmations) übersprungen (deaktiviert)',
+    'skipped step 2 (exportConfirmations) because it is disabled'
+        => 'Schritt 2 (exportConfirmations) übersprungen (deaktiviert)',
     'skipped step 3 (sendOutbox) because it is disabled'
         => 'Schritt 3 (sendOutbox) übersprungen (deaktiviert)',
     'Syncdata server successfully contacted'
         => 'Syncdata Server wurde erfolgreich kontaktiert',
     'Synchronization in progress, please wait...'
         => 'Aktualisierung läuft, bitte warten...',
-    'There are no confirmation logs to be uploaded'
-        => 'Keine Confirmation Logs zum Upload vorhanden',
+    'There are no files to be uploaded'
+        => 'Keine Dateien zum Upload vorhanden',
     'Unable to connect to server! (Code: %s)'
         => 'Verbindung zum Server fehlgeschlagen! (Code: %s)',
 );

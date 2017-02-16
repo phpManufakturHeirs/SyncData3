@@ -3,9 +3,10 @@
 /**
  * SyncData
  *
- * @author Team phpManufaktur <team@phpmanufaktur.de>
- * @link https://addons.phpmanufaktur.de/SyncData
- * @copyright 2013 Ralf Hertsch <ralf.hertsch@phpmanufaktur.de>
+ * @author Team phpManufaktur <team@phpmanufaktur.info>
+ * @link http://www.phpmanufaktur.info/de/addons/syncdata/syncdata3.php
+ * @copyright 2013 Ralf Hertsch
+ * @copyright 2017 Bianka Martinovic
  * @license MIT License (MIT) http://www.opensource.org/licenses/MIT
  */
 
@@ -412,7 +413,7 @@ class SystemCheck
     </head>
     <body>
         <h1>SyncData SystemCheck</h2>
-        <p>&copy 2013 <a href="https://phpmanufaktur.de">phpManufaktur</a> by <a href="mailto:ralf.hertsch@phpmanufaktur.de">Ralf Hertsch</a></p>
+        <p>&copy 2013 <a href="http://phpmanufaktur.info">phpManufaktur</a> by Ralf Hertsch</p>
         <fieldset>
             <legend>CMS</legend>
             <div class="label">CMS Type</div>
@@ -471,9 +472,7 @@ class SystemCheck
         </fieldset>
         <div class="info">
             <p>To get a <a href="?action=phpinfo">detailed PHP information</a> use the parameter <code>systemcheck.php?action=phpinfo</code>.</p>
-            <p>Visit the <a href="https://addons.phpmanufaktur.de/syncdata">SyncData Projekt Home</a> and the <a href="https://github.com/phpManufaktur/SyncData2/wiki">SyncData WIKI</a> to get more information.</p>
-            <p>Please feel free to contact the <a href="https://support.phpmanufaktur.de">phpManufaktur Support Group</a> to receive assistance.</p>
-
+            <p>Visit the <a href="http://www.phpmanufaktur.info/de/addons/syncdata/syncdata3.php">SyncData Projekt Home</a> and the <a href="https://github.com/phpManufakturHeirs/SyncData3/wiki">SyncData WIKI</a> to get more information.</p>
         </div>
     </body>
 </html>
@@ -506,9 +505,9 @@ if (isset($_GET['action']) && ($_GET['action'] === strtolower('phpinfo'))) {
 
 // check the system for SyncData
 $info = new SystemCheck();
-$info->setRequriredPHPVersion('5.3.2');
+$info->setRequriredPHPVersion('5.5.0');
 $info->setRequiredMySQLVersion('5.0.0');
-$info->setRequiredCURL(false);
+$info->setRequiredCURL(true);
 $info->setRequriredZIPArchive(true);
 $info->setRequiredInnoDB(true);
 $info->exec();

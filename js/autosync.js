@@ -11,17 +11,19 @@ function sd3_setError(message) {
 (function sd3_poll() {
     setTimeout(function() {
         $.ajax({
-            url: url + "/autosync_poll?jobid=" + jobid,
+            url: url + "/poll?jobid=" + jobid,
             dataType: "json",
         }).always(function(jqXHR,textStatus,jqObj) {
             if(textStatus=='success') {
-                var data = $.parseJSON(jqObj.responseJSON);
+                if(typeof jqObj.responseJSON !== 'object') {
+                    var data = $.parseJSON(jqObj.responseJSON);
+                } else {
+                    var data = jqObj.responseJSON;
+                }
                 if(data.message) {
                     $("#progress > div").html(data.message);
                 }
-console.log(data.success);
                 if(!data.success || data.success === false) {
-console.log('false');
                     if(data.errors) {
                         $("#error > div").html(data.errors).parent().show();
                     } else {

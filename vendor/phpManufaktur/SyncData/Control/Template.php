@@ -40,6 +40,7 @@ class Template
         );
 
         if($tpl=='autosync') {
+            $role = $app['config']['sync']['role'];
             $find = array_merge($find,array(
                 '{{ jobid }}',
                 '{{ sessid }}',
@@ -52,9 +53,9 @@ class Template
             $replace = array_merge($replace,array(
                 ( defined('SYNCDATA_JOBID') ? SYNCDATA_JOBID : 'unknown' ),
                 session_id(),
-                $app['config']['sync']['client']['interval'],
-                $app['config']['sync']['client']['maxexecutiontime'],
-                ( $app['config']['sync']['client']['maxexecutiontime'] / 1000 ),
+                $app['config']['sync'][$role]['interval'],
+                $app['config']['sync'][$role]['maxexecutiontime'],
+                ( $app['config']['sync'][$role]['maxexecutiontime'] / 1000 ),
                 $app['translator']->trans('Aktualisierung fehlgeschlagen. Die maximale Wartezeit wurde überschritten.'),
                 '<i class="icono-exclamation"></i> '.$app['translator']->trans('Please note: There were <span id="errcnt"></span> Errors. Please check the log for details.')
             ));

@@ -16,6 +16,7 @@ use phpManufaktur\SyncData\Control\Utils;
 use phpManufaktur\SyncData\Control\Application;
 use phpManufaktur\SyncData\Control\Restore;
 use phpManufaktur\SyncData\Control\Check;
+use phpManufaktur\SyncData\Control\Autosync;
 use phpManufaktur\SyncData\Data\Setup\Setup;
 use phpManufaktur\SyncData\Control\CreateSynchronizeArchive;
 use phpManufaktur\SyncData\Control\SynchronizeClient;
@@ -49,6 +50,12 @@ try {
     define('MANUFAKTUR_PATH', SYNCDATA_PATH.'/vendor/phpManufaktur');
 
     include SYNCDATA_PATH.'/bootstrap.inc';
+
+    if($app['config']['sync']['enabled'] === true) {
+        $app['autosync'] = $app->share(function() use($app) {
+            return new Autosync($app);
+        });
+    }
 
     // get the SyncDataServer directory
     $syncdata_directory = dirname($_SERVER['SCRIPT_NAME']);
@@ -194,76 +201,6 @@ try {
             $synchronizeClient = new SynchronizeClient($app);
             $app_result = $synchronizeClient->exec();
             break;
-        case '/autosync':
-            // start a new autosync job
-            if (!$CheckKey->check()) {
-                $app_result = $CheckKey->getKeyHint();
-                break;
-            }
-            if($app['config']['sync']['role'] != 'client') {
-                $app_result = '- invalid request -';
-                break;
-            }
-            $tpl = 'autosync';
-            $synchronizeClient = new SynchronizeClient($app);
-            $app_result = $synchronizeClient->autosync();
-            break;
-        case '/autosync_exec':
-            if($app['config']['sync']['role'] != 'client') {
-                $app_result = '- invalid request -';
-                break;
-            }
-            $synchronizeClient = new SynchronizeClient($app);
-            $app_result = $synchronizeClient->autosync_exec();
-            break;
-        case '/autosync_poll':
-            if($app['config']['sync']['role'] != 'client') {
-                $app_result = '- invalid request -';
-                break;
-            }
-            // request AJAX call
-            if(
-                   !isset($_SERVER['HTTP_X_REQUESTED_WITH'])
-                || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) != 'xmlhttprequest'
-            ) {
-                $app_result = '- invalid request -';
-                break;
-            }
-            $synchronizeClient = new SynchronizeClient($app);
-            $synchronizeClient->autosync_poll();
-            break;
-        case '/get_outbox':
-            // get a list of files in the outbox; requires application/json
-            // request header!
-            if (!$CheckKey->check()) {
-                $app_result = $CheckKey->getKeyHint();
-                break;
-            }
-            if($app['config']['sync']['role'] != 'server') {
-                $app_result = '- invalid request -';
-                break;
-            }
-            if (!$app['utils']->checkJSON()) {
-                $app_result = '- invalid request -';
-                break;
-            }
-            $synchronizeServer = new SynchronizeServer($app);
-            $app_result = $synchronizeServer->exec();
-            break;
-        case '/get_sync':
-            if (!$CheckKey->check()) {
-                $app_result = $CheckKey->getKeyHint();
-                break;
-            }
-            if(!isset($_GET['f']) || !strlen($_GET['f'])) {
-                $app_result = '- invalid request -';
-                break;
-            }
-            $synchronizeServer = new SynchronizeServer($app);
-            $app_result = $synchronizeServer->push();
-            // do not print result, exit instead
-            exit;
-            break;
         case '/update_tool':
         case '/setup_tool':
             // install the admin-tool for the ConfirmationLog
@@ -300,6 +237,99 @@ try {
             $synchronizeServer = new SynchronizeServer($app);
             $app_result = $synchronizeServer->receive();
             break;
+
+// ---------- AUTOSYNC ROUTES --------------------------------------------------
+        case '/autosync':
+            // start a new autosync job
+            if (!$CheckKey->check()) {
+                $app_result = $CheckKey->getKeyHint();
+                break;
+            }
+            if($app['config']['sync']['enabled'] !== true) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            $tpl = 'autosync';
+            $app_result = $app['autosync']->sync();
+            break;
+        case '/autosync_exec':
+            if($app['config']['sync']['enabled'] !== true) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            if(!in_array($app['config']['sync']['role'], array('client','server'))) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            // request AJAX call
+            if(
+                   !isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+                || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) != 'xmlhttprequest'
+            ) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            if($app['config']['sync']['role'] == 'client') {
+                $handler = new SynchronizeClient($app);
+            } else {
+                $handler = new SynchronizeServer($app);
+            }
+            $app_result = $handler->autosync();
+            break;
+        case '/poll':
+            if($app['config']['sync']['enabled'] !== true) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            if(!in_array($app['config']['sync']['role'], array('client','server'))) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            // request AJAX call
+            if(
+                   !isset($_SERVER['HTTP_X_REQUESTED_WITH'])
+                || strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) != 'xmlhttprequest'
+            ) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            $app_result = $app['autosync']->poll();
+            break;
+        case '/get_outbox':
+            // get a list of files in the outbox; requires application/json
+            // request header!
+            if (!$CheckKey->check()) {
+                $app_result = $CheckKey->getKeyHint();
+                break;
+            }
+            if($app['config']['sync']['role'] != 'server') {
+                $app_result = '- invalid request -';
+                break;
+            }
+            if (!$app['utils']->checkJSON()) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            $synchronizeServer = new SynchronizeServer($app);
+            $app_result = $synchronizeServer->exec();
+            break;
+        case '/get_sync':
+            if (!$CheckKey->check()) {
+                $app_result = $CheckKey->getKeyHint();
+                break;
+            }
+            if(!isset($_GET['f']) || !strlen($_GET['f'])) {
+                $app_result = '- invalid request -';
+                break;
+            }
+            $synchronizeServer = new SynchronizeServer($app);
+            $app_result = $synchronizeServer->pushfile();
+            // do not print result, exit instead
+            exit;
+            break;
+
+
+
         case '#init_syncdata':
             // initialized SyncData2
             $app_result = 'SyncData has successfull initialized and also created a security key: <span class="security_key">'.

@@ -35,37 +35,18 @@ class SynchronizeClient
     }
 
     /**
+     * autosync handler; prints progress to job file
      *
      * @access public
-     * @return
+     * @return void
      **/
     public function autosync()
     {
-        // ----- Step 0: Start new job -------------------------------------
         $this->app['monolog']->addInfo(
-            'Start new AUTOSYNC Job', array('method' => __METHOD__, 'line' => __LINE__)
-        );
-        if(!$this->startJob())
-        {
-            return $this->app['translator']->trans(
-                'Unable to start a new synchronization job!'
-            );
-        }
-        return 'Synchronization in progress, please wait...';
-    }   // end function autosync()
-
-    /**
-     *
-     * @access public
-     * @return
-     **/
-    public function autosync_exec()
-    {
-        $this->app['monolog']->addInfo(
-            '----- AUTOSYNC EXEC -----', array('method' => __METHOD__, 'line' => __LINE__)
+            '----- EXEC AUTOSYNC -----', array('method' => __METHOD__, 'line' => __LINE__)
         );
 
-        if(!isset($_GET['jobid']) || !$this->checkJob($_GET['jobid']))
+        if(!isset($_GET['jobid']) || !$this->app['autosync']->checkJob($_GET['jobid']))
         {
             $this->app['monolog']->addError(sprintf(
                 'no such job: [%s]', $_GET['jobid']
@@ -95,13 +76,13 @@ class SynchronizeClient
         $_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]   = array();
 
         // ----- Step 1: Check connection --------------------------------------
-        if(!$this->checkSource()) // check connection
+        if(!$this->app['autosync']->checkConnection('server')) // check connection
         {
             $_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"] = 1;
             $_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]    = 1;
             exit();
         } else {
-            $this->logProgress(array(
+            $this->app['autosync']->logProgress(array(
                 'message' => 'Syncdata server successfully contacted',
             ));
         }
@@ -112,7 +93,7 @@ class SynchronizeClient
             $Confirmations = new Confirmations($this->app);
             $result = $Confirmations->sendConfirmations();
             $this->app['monolog']->addInfo('>>> sendConfirmations: '.$result);
-            $this->logProgress(array(
+            $this->app['autosync']->logProgress(array(
                 'message' => $result,
                 'success' => true,
             ));
@@ -123,50 +104,25 @@ class SynchronizeClient
                 $this->app['monolog']->addInfo(
                     sprintf('>>> sendConfirmations: %d files found',count($files))
                 );
-                $this->logProgress(array(
+                $this->app['autosync']->logProgress(array(
                     'message' => '%d confirmation logs found',
                     'param'   => count($files),
                 ));
             }
         } else {
-            $this->app['monolog']->addInfo('>>> sendConfirmations: disabled');
-            $this->logProgress(array(
-                'message' => 'skipped step 2 (sendConfirmations) because it is disabled',
+            $this->app['monolog']->addInfo('>>> exportConfirmations: disabled');
+            $this->app['autosync']->logProgress(array(
+                'message' => 'skipped step 2 (exportConfirmations) because it is disabled',
             ));
         }
 
         // ----- Step 3: Upload local outbox -----------------------------------
         if($this->app['config']['sync']['client']['steps']['upload'])
         {
-            $result = false;
-            $this->app['monolog']->addInfo('>>>        sendOutbox: '.$result);
-            $this->logProgress(array(
-                'message' => $result,
-            ));
-            // get a list of available files
-            $files = $this->listFiles('outbox');
-            if(isset($files) && count($files))   // if there are any files...
-            {
-                $this->app['monolog']->addInfo(
-                    sprintf('>>> sendOutbox: %d files found',count($files))
-                );
-                $this->logProgress(array(
-                    'message' => '%d files in the outbox',
-                    'param'   => count($files),
-                ));
-                foreach(array_values($files) as $file) {
-                    $path = $this->app['utils']->sanitizePath(sprintf('%s/%s/%s', SYNCDATA_PATH, 'outbox', $file));
-                    $this->pushFile($path);
-                }
-            } else {
-                $this->logProgress(array(
-                    'message' => 'There are no files to be uploaded',
-                    'success' => true
-                ));
-            }
+            $this->app['autosync']->pushOutbox('server');
         } else {
             $this->app['monolog']->addInfo('>>>        sendOutbox: disabled');
-            $this->logProgress(array(
+            $this->app['autosync']->logProgress(array(
                 'message' => 'skipped step 3 (sendOutbox) because it is disabled',
             ));
         }
@@ -181,7 +137,7 @@ class SynchronizeClient
                     sprintf('>>>          download: %d files found in outbox',count($files))
                 );
 
-                $this->logProgress(array(
+                $this->app['autosync']->logProgress(array(
                     'message' => '%d files found in outbox',
                     'param'   => count($files),
                 ));
@@ -204,7 +160,7 @@ class SynchronizeClient
                 $this->app['monolog']->addInfo(
                     sprintf('>>>          download: %d files to download',count($files))
                 );
-                $this->logProgress(array(
+                $this->app['autosync']->logProgress(array(
                     'message' => 'found %d new files',
                     'param'   => count($files),
                 ));
@@ -214,14 +170,14 @@ class SynchronizeClient
                 }
             }
 
-            $this->logProgress(array(
+            $this->app['autosync']->logProgress(array(
                 'message' => 'downloaded %d files',
                 'param'   => count($files),
             ));
 
         } else {
             $this->app['monolog']->addInfo('>>>          download: disabled');
-            $this->logProgress(array(
+            $this->app['autosync']->logProgress(array(
                 'message' => 'skipped step 4 (download) because it is disabled',
                 'step'    => 4
             ));
@@ -233,11 +189,11 @@ class SynchronizeClient
             $files = $this->listInbox();
             if(is_array($files) && count($files))
             {
-                $this->logProgress(array(
+                $this->app['autosync']->logProgress(array(
                     'message' => 'import started (%d files in inbox)',
                     'param'   => count($files),
                 ));
-                $local_ch   = $this->init_client();
+                $local_ch   = $this->app['utils']->init_client();
                 $file_count = 0;
                 $err_count  = 0;
                 foreach(array_values($files) as $file)
@@ -245,7 +201,7 @@ class SynchronizeClient
                     $this->app['monolog']->addInfo(sprintf(
                         '>>>            import: [%s]',$file
                     ));
-                    $this->logProgress(array(
+                    $this->app['autosync']->logProgress(array(
                         'message' => 'importing file: %s',
                         'param'   => $file
                     ));
@@ -259,7 +215,7 @@ class SynchronizeClient
                             '>>> !!!!! import error! (URL: [%s] - Status: [%s])',
                             $url,curl_getinfo($local_ch,CURLINFO_HTTP_CODE)
                         ));
-                        $this->logProgress(array(
+                        $this->app['autosync']->logProgress(array(
                             'message' => sprintf(
                                 '>>> !!!!! import error! (URL: [%s] - Status: [%s])',
                                 $url,curl_getinfo($local_ch,CURLINFO_HTTP_CODE)
@@ -267,41 +223,21 @@ class SynchronizeClient
                         ));
                         break;
                     }
-                    $dom = new \DOMDocument('1.0', 'UTF-8');
-                    libxml_use_internal_errors(true);
-                    $dom->loadHTML($result);
-                    if($dom->getElementById('content')->hasChildNodes())
-                    {
-                        $is_error = false;
-                        $message  = NULL;
-                        $nodes    = $dom->getElementsByTagName("div");
-                        foreach ($nodes as $element)
-                        {
-                            $class = $element->getAttribute("class");
-                            if($class=='error')
-                            {
-                                $is_error = true;
-                                $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]++;
-                            }
-                            if($class=='message')
-                            {
-                                $message = ( $is_error ? 'ERROR ' : '' ) . $element->textContent;
-                                $this->logProgress(array(
-                                    'message' => $message,
-                                    'success' => ( $is_error ? false : true )
-                                ));
-                            }
-                        }
-                    }
+                    list($is_error,$message) = $this->app['utils']->parseResponse($result);
+                    if($is_error) $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]++;
+                    $this->app['autosync']->logProgress(array(
+                        'message' => $message,
+                        'success' => ( $is_error ? false : true )
+                    ));
                     $file_count++;
                 }
-                $this->logProgress(array(
+                $this->app['autosync']->logProgress(array(
                     'message' => 'import done (%d files)',
                     'param'   => $file_count
                 ));
                 if($_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"])
                 {
-                    $this->logProgress(array(
+                    $this->app['autosync']->logProgress(array(
                         'message' => '<br /><br />PLEASE NOTE: There were %d import errors!',
                         'param'   => $_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"],
                         'success' => false,
@@ -311,147 +247,111 @@ class SynchronizeClient
         }
 
         // ----- Step 6: Finished ------------------------------------------------
-        $this->logProgress(array(
+        $this->app['autosync']->logProgress(array(
             'message'  => '<span class="ready">----- '.$this->app['translator']->trans('Job finished').' -----</span>',
             'success'  => true,
             'finished' => true,
         ));
-    }
+
+    }   // end function autosync()
 
     /**
+     * Main routine to exec the synchronization
      *
-     * @access public
-     * @return
-     **/
-    public function autosync_poll()
-    {
-        if(
-            (
-                   !isset($_GET['jobid'])
-                || !$this->checkJob($_GET['jobid'])
-            )
-        ) {
-            $this->app['monolog']->addError(sprintf(
-                'no such job: [%s]', $_GET['jobid']
-            ));
-            echo json_encode(array(
-                'success'  => false,
-                'message'  => '- invalid request -',
-                'finished' => true,
-            ),1);
-            exit();
-        }
-
-        $errmsg = null;
-        $finished = false;
-        $success = true;
-
-        // read job file
-        $file = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, $_GET['jobid'])
-        );
-        $progress = str_replace("\n","<br />\n",file($file));
-        if(substr_count(implode('',$progress),'Job finished')) {
-            $finished = true;
-        }
-
-        // check if there's an error file
-        $errfile = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/autosync_job_%s.error', SYNCDATA_PATH, $_GET['jobid'])
-        );
-        if(file_exists($errfile)) {
-            $errmsg = str_replace("\n","<br />\n",file($errfile));
-            $success = false;
-        }
-
-        $result = array(
-            'success'  => $success,
-            'message'  => $progress,
-            'finished' => $finished,
-            'errors'   => $errmsg,
-        );
-
-        $result = json_encode($result,1);
-
-        header('Content-type: application/json');
-        echo json_encode($result);
-
-        exit();
-    }
-
-    /**
-     *
-     * @access protected
-     * @return
-     **/
-    protected function checkJob($jobid)
-    {
-        $file = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, $jobid)
-        );
-        if(!file_exists($file)) {
-            return false;
-        }
-        define('SYNCDATA_JOBID', $jobid);
-        return true;
-    }   // end function checkJob()
-
-    /**
-     * ----- Schritt 1: Verbindung zum Quellsystem pruefen -----
-     *
-     * @access protected
-     * @return
-     **/
-    protected function checkSource()
+     * @throws \Exception
+     * @return string
+     */
+    public function exec()
     {
         try {
-            $this->app['monolog']->addDebug(sprintf(
-                '>>> checking source url [%s]', $this->app['config']['sync']['server']['url']
-            ), array('method' => __METHOD__, 'line' => __LINE__));
+            // start SYNC
+            $this->app['monolog']->addInfo('Start SYNC', array('method' => __METHOD__, 'line' => __LINE__));
 
-            $remote_ch = $this->init_client(true); // maybe with proxy
-            curl_setopt($remote_ch, CURLOPT_URL, $this->app['config']['sync']['server']['url']);
-            $result = curl_exec($remote_ch);
-            if(curl_getinfo($remote_ch,CURLINFO_HTTP_CODE) != 200)
-            {
-                self::$error_msg = sprintf(
-                    $this->app['translator']->trans(
-                        'Unable to connect to server! (Code: %s)'
-                    ),
-                    curl_getinfo($remote_ch,CURLINFO_HTTP_CODE)
+            $SyncClient = new SyncClient($this->app);
+            $archive_id = $SyncClient->selectLastArchiveID();
+            self::$archive_id = $archive_id+1;
+
+            $zip_path = sprintf('%s/inbox/syncdata_synchronize_%05d.zip', SYNCDATA_PATH, self::$archive_id);
+            $md5_path = sprintf('%s/inbox/syncdata_synchronize_%05d.md5', SYNCDATA_PATH, self::$archive_id);
+            $md5_archive_path = sprintf('%s/data/synchronize/syncdata_synchronize_%05d.md5', SYNCDATA_PATH, self::$archive_id);
+            $zip_archive_path = sprintf('%s/data/synchronize/syncdata_synchronize_%05d.zip', SYNCDATA_PATH, self::$archive_id);
+            if (file_exists($zip_path) && file_exists($md5_path)) {
+                // ok - expected archive is there, proceed
+                if (false === ($md5_origin = file_get_contents($md5_path))) {
+                    $result = "Can't read the MD5 checksum file for the SYNC!";
+                    $this->app['monolog']->addError($result, array('method' => __METHOD__, 'line' => __LINE__));
+                    return $result;
+                }
+                if (md5_file($zip_path) !== $md5_origin) {
+                    $result = "The checksum of the SYNC archive is not equal to the MD5 checksum file value!";
+                    $this->app['monolog']->addError($result, array('method' => __METHOD__, 'line' => __LINE__));
+                    return $result;
+                }
+                // check the TEMP directory
+                if (file_exists(TEMP_PATH.'/sync') && !$this->app['utils']->rrmdir(TEMP_PATH.'/sync')) {
+                    throw new \Exception(sprintf("Can't delete the directory %s", TEMP_PATH.'/sync'));
+                }
+                if (!file_exists(TEMP_PATH.'/sync') && (false === @mkdir(TEMP_PATH.'/sync', 0755, true))) {
+                    throw new \Exception("Can't create the directory ".TEMP_PATH."/sync");
+                }
+                // unzip the archive
+                $this->app['monolog']->addInfo("Start unzipping $zip_path", array('method' => __METHOD__, 'line' => __LINE__));
+                $unZip = new unZip($this->app);
+                $unZip->setUnZipPath(TEMP_PATH.'/sync');
+                $unZip->extract($zip_path);
+                $this->app['monolog']->addInfo("Unzipped $zip_path", array('method' => __METHOD__, 'line' => __LINE__));
+
+                // process the tables
+                $this->processTables();
+
+                // process the files
+                $this->processFiles();
+
+                // ok - nearly all done
+                $data = array(
+                    'archive_id' => self::$archive_id,
+                    'action' => 'SYNC'
                 );
-                $this->app['monolog']->addError(
-                    self::$error_msg, array('method' => __METHOD__, 'line' => __LINE__)
-                );
-                $this->logProgress(array('message'=>self::$error_msg,'success'=>false));
-                return false;
+                $SyncClient->insert($data);
+
+                // move the files from the /inbox to /data/synchronize
+                if (!file_exists(SYNCDATA_PATH.'/data/synchronize/.htaccess') || !file_exists(SYNCDATA_PATH.'/data/synchronize/.htpasswd')) {
+                    $this->app['utils']->createDirectoryProtection(SYNCDATA_PATH.'/data/synchronize');
+                }
+                if (!@rename($md5_path, $md5_archive_path)) {
+                    $this->app['monolog']->addError("Can't save the MD5 checksum file in /data/synchronize!",
+                        array('method' => __METHOD__, 'line' => __LINE__));
+                }
+                if (!@rename($zip_path, $zip_archive_path)) {
+                    $this->app['monolog']->addError("Can't save the synchronize archive in /data/synchronize!",
+                        array('method' => __METHOD__, 'line' => __LINE__));
+                }
+
+                // delete the temp directories
+                $directories = array('/backup', '/restore', '/sync', '/unzip');
+                foreach ($directories as $directory) {
+                    if (file_exists(TEMP_PATH.$directory) && (true !== $this->app['utils']->rrmdir(TEMP_PATH.$directory))) {
+                        throw new \Exception(sprintf("Can't delete the directory %s", TEMP_PATH.directory));
+                    }
+                }
+                $this->app['monolog']->addInfo("SYNC finished!", array('method' => __METHOD__, 'line' => __LINE__));
             }
-        } catch (\Exception $e) {
-            self::$error_msg = $e->getMessage();
-            $this->app['monolog']->addError($e->getMessage());
-            return false;
-        }
-        return true;
-    }   // end function checkSource()
+            else {
+                $result = sprintf('Missing archive file %s and checksum file %s in the inbox.', basename($zip_path), basename($md5_path));
+                $this->app['monolog']->addInfo($result, array('method' => __METHOD__, 'line' => __LINE__));
+                return $result;
+            }
 
-    /**
-     *
-     * @access protected
-     * @return
-     **/
-    protected function cleanupJobs()
-    {
-        // clean up old job files (older than 7 days)
-        $path  = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/', SYNCDATA_PATH)
-        );
-        $files = glob($path.'/autosync_job_*');
-        if(count($files))
-            foreach($files as $f)
-                if(filemtime($f)<(time()-24*60*60*7))
-                    unlink($f);
-    }   // end function cleanupJobs()
-    
+            return 'SYNC finished';
+        } catch (\Exception $e) {
+            throw new \Exception($e);
+        }
+    }
+
+    /***************************************************************************
+     * PROTECTED FUNCTIONS
+     **************************************************************************/
+
     /**
      *
      * @access protected
@@ -459,7 +359,7 @@ class SynchronizeClient
      **/
     protected function getFile($file)
     {
-        $ch = $this->init_client(true);
+        $ch = $this->app['utils']->init_client(true);
         curl_setopt($ch, CURLOPT_URL, sprintf(
             '%s/syncdata/get_sync?key=%s&f=%s',
             $this->app['config']['sync']['server']['url'],
@@ -488,7 +388,7 @@ class SynchronizeClient
             $this->app['monolog']->addDebug(
                 '>>> get outbox file list', array('method' => __METHOD__, 'line' => __LINE__)
             );
-            $remote_ch = $this->init_client(true,array('Accept: application/json')); // maybe with proxy
+            $remote_ch = $this->app['utils']->init_client(true,array('Accept: application/json')); // maybe with proxy
             curl_setopt($remote_ch, CURLOPT_URL, $this->app['config']['sync']['server']['url'].'/syncdata/get_outbox?key='.$this->app['config']['sync']['server']['key']);
             $response  = curl_exec($remote_ch);
             if( curl_getinfo($remote_ch,CURLINFO_HTTP_CODE) != 200 )
@@ -511,46 +411,7 @@ class SynchronizeClient
             throw new \Exception($e);
         }
     }   // end function getOutboxContents()
-    
 
-    /**
-     * Initialisierung curl
-     **/
-    protected function init_client($is_remote=false, $add_headers=null)
-    {
-        $headers = array(
-            'User-Agent: php-curl',
-        );
-
-        if(is_array($add_headers) && count($add_headers))
-            $headers = array_merge($headers,$add_headers);
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-// NUR ZUM TESTEN
-        if($is_remote)
-        {
-#            curl_setopt($ch, CURLOPT_PROXY, 'proxy.materna.de');
-#            curl_setopt($ch, CURLOPT_PROXYPORT, '8080');
-        }
-// NUR ZUM TESTEN
-        return $ch;
-    }
-
-    /**
-     *
-     * @access protected
-     * @return
-     **/
-    protected function listFiles($folder='inbox',$prefix='')
-    {
-        $path = $this->app['utils']->sanitizePath(sprintf('%s/%s/', SYNCDATA_PATH, $folder));
-        return $this->app['utils']->getFiles($path,$prefix);
-    }   // end function listFiles()
-    
     /**
      * Process the tables for the synchronization
      *
@@ -720,224 +581,6 @@ class SynchronizeClient
                         array('method' => __METHOD__, 'line' => __LINE__));
                 }
             }
-        }
-    }
-
-    /**
-     *
-     * @access protected
-     * @return
-     **/
-    protected function pushFile($file)
-    {
-        $this->app['monolog']->addInfo(sprintf(
-            'pushing file [%s]', $file
-        ));
-        $ch = $this->init_client(true);
-        curl_setopt($ch, CURLOPT_URL, sprintf(
-            '%s/syncdata/upload_confirmations?key=%s',
-            $this->app['config']['sync']['server']['url'],
-            $this->app['config']['sync']['server']['key']
-        ));
-        $postData = array(
-            'file' => '@'.realpath($file),
-        );
-	    curl_setopt($ch, CURLOPT_POST,1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-        $response = curl_exec($ch);
-        $this->app['monolog']->addInfo(print_r($response,1));
-    }   // end function pushFile()
-
-    protected function finishJob()
-    {
-        // remove job file
-        $file = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, SYNCDATA_JOBID)
-        );
-        unlink($file);
-        unset($_SESSION["JOB_".SYNCDATA_JOBID."_PROGRESS"]);
-        unset($_SESSION["JOB_".SYNCDATA_JOBID."_ERROR"]);
-        unset($_SESSION["JOB_".SYNCDATA_JOBID."_FINISHED"]);
-        unset($_SESSION["JOB_".SYNCDATA_JOBID."_ERRORCOUNT"]);
-    }
-
-    /**
-     * start a new job
-     *
-     * @access protected
-     * @return
-     **/
-    protected function startJob()
-    {
-        // clean up old jobs
-        $this->cleanupJobs();
-
-        // generate JobID
-        $jobid = $this->app['utils']->generatePassword(15,false,'lud');
-        define('SYNCDATA_JOBID', $jobid);
-
-        if($this->logProgress(
-            array(
-                'message' => '----- '.$this->app['translator']->trans('Job started').' -----',
-            )
-        )) {
-            return true;
-        } else {
-            return false;
-        }
-    }   // end function startJob()
-
-    /**
-     * create / update job
-     *
-     * @param  string $message
-     * @return boolean
-     **/
-    protected function logProgress($data)
-    {
-        // get file path
-        $file = $this->app['utils']->sanitizePath(
-            sprintf('%s/temp/autosync_job_%s', SYNCDATA_PATH, SYNCDATA_JOBID)
-        );
-
-        // obfuscate paths
-        $data['message'] = str_ireplace(
-            array(
-                SYNCDATA_PATH,
-                str_replace('/','\\',SYNCDATA_PATH),
-            ),
-            array(
-                '/abs/path/to',
-                '/abs/path/to',
-            ),
-            $data['message']
-        );
-
-        // translate and replace params (if any)
-        $data['message'] = $this->app['translator']->trans($data['message']);
-        if(isset($data['param'])) $data['message'] = sprintf($data['message'],$data['param']);
-
-        // mark errors
-        if(substr_count($data['message'],'ERROR ') || ( isset($data['success']) && !$data['success']))
-        {
-            $data['message'] = '<span class="errline">'.$data['message'].'</span>';
-        } else {
-            // add date to message
-            $data['message'] = sprintf('[%10s] %s', date('c'), $data['message']);
-        }
-
-        $mode = 'a';
-        if(!file_exists($file)) $mode = 'w';
-
-        // error
-        if(isset($data['success']) && $data['success'] === false)
-        {
-            $fh = fopen($file.'.error',$mode);
-        } else {
-            $fh = fopen($file,$mode); // create new / overwrite
-        }
-
-        if(!$fh || !is_resource($fh))
-        {
-            $this->app['monolog']->addError('Schreiben in Jobdatei fehlgeschlagen!');
-            return false;
-        }
-        fwrite($fh,$data['message']."\n");
-        fclose($fh);
-
-        return true;
-    }
-
-    /**
-     * Main routine to exec the synchronization
-     *
-     * @throws \Exception
-     * @return string
-     */
-    public function exec()
-    {
-        try {
-            // start SYNC
-            $this->app['monolog']->addInfo('Start SYNC', array('method' => __METHOD__, 'line' => __LINE__));
-
-            $SyncClient = new SyncClient($this->app);
-            $archive_id = $SyncClient->selectLastArchiveID();
-            self::$archive_id = $archive_id+1;
-
-            $zip_path = sprintf('%s/inbox/syncdata_synchronize_%05d.zip', SYNCDATA_PATH, self::$archive_id);
-            $md5_path = sprintf('%s/inbox/syncdata_synchronize_%05d.md5', SYNCDATA_PATH, self::$archive_id);
-            $md5_archive_path = sprintf('%s/data/synchronize/syncdata_synchronize_%05d.md5', SYNCDATA_PATH, self::$archive_id);
-            $zip_archive_path = sprintf('%s/data/synchronize/syncdata_synchronize_%05d.zip', SYNCDATA_PATH, self::$archive_id);
-            if (file_exists($zip_path) && file_exists($md5_path)) {
-                // ok - expected archive is there, proceed
-                if (false === ($md5_origin = file_get_contents($md5_path))) {
-                    $result = "Can't read the MD5 checksum file for the SYNC!";
-                    $this->app['monolog']->addError($result, array('method' => __METHOD__, 'line' => __LINE__));
-                    return $result;
-                }
-                if (md5_file($zip_path) !== $md5_origin) {
-                    $result = "The checksum of the SYNC archive is not equal to the MD5 checksum file value!";
-                    $this->app['monolog']->addError($result, array('method' => __METHOD__, 'line' => __LINE__));
-                    return $result;
-                }
-                // check the TEMP directory
-                if (file_exists(TEMP_PATH.'/sync') && !$this->app['utils']->rrmdir(TEMP_PATH.'/sync')) {
-                    throw new \Exception(sprintf("Can't delete the directory %s", TEMP_PATH.'/sync'));
-                }
-                if (!file_exists(TEMP_PATH.'/sync') && (false === @mkdir(TEMP_PATH.'/sync', 0755, true))) {
-                    throw new \Exception("Can't create the directory ".TEMP_PATH."/sync");
-                }
-                // unzip the archive
-                $this->app['monolog']->addInfo("Start unzipping $zip_path", array('method' => __METHOD__, 'line' => __LINE__));
-                $unZip = new unZip($this->app);
-                $unZip->setUnZipPath(TEMP_PATH.'/sync');
-                $unZip->extract($zip_path);
-                $this->app['monolog']->addInfo("Unzipped $zip_path", array('method' => __METHOD__, 'line' => __LINE__));
-
-                // process the tables
-                $this->processTables();
-
-                // process the files
-                $this->processFiles();
-
-                // ok - nearly all done
-                $data = array(
-                    'archive_id' => self::$archive_id,
-                    'action' => 'SYNC'
-                );
-                $SyncClient->insert($data);
-
-                // move the files from the /inbox to /data/synchronize
-                if (!file_exists(SYNCDATA_PATH.'/data/synchronize/.htaccess') || !file_exists(SYNCDATA_PATH.'/data/synchronize/.htpasswd')) {
-                    $this->app['utils']->createDirectoryProtection(SYNCDATA_PATH.'/data/synchronize');
-                }
-                if (!@rename($md5_path, $md5_archive_path)) {
-                    $this->app['monolog']->addError("Can't save the MD5 checksum file in /data/synchronize!",
-                        array('method' => __METHOD__, 'line' => __LINE__));
-                }
-                if (!@rename($zip_path, $zip_archive_path)) {
-                    $this->app['monolog']->addError("Can't save the synchronize archive in /data/synchronize!",
-                        array('method' => __METHOD__, 'line' => __LINE__));
-                }
-
-                // delete the temp directories
-                $directories = array('/backup', '/restore', '/sync', '/unzip');
-                foreach ($directories as $directory) {
-                    if (file_exists(TEMP_PATH.$directory) && (true !== $this->app['utils']->rrmdir(TEMP_PATH.$directory))) {
-                        throw new \Exception(sprintf("Can't delete the directory %s", TEMP_PATH.directory));
-                    }
-                }
-                $this->app['monolog']->addInfo("SYNC finished!", array('method' => __METHOD__, 'line' => __LINE__));
-            }
-            else {
-                $result = sprintf('Missing archive file %s and checksum file %s in the inbox.', basename($zip_path), basename($md5_path));
-                $this->app['monolog']->addInfo($result, array('method' => __METHOD__, 'line' => __LINE__));
-                return $result;
-            }
-
-            return 'SYNC finished';
-        } catch (\Exception $e) {
-            throw new \Exception($e);
         }
     }
 }
